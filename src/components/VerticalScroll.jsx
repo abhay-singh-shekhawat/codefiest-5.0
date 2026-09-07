@@ -1,0 +1,103 @@
+import { useRef } from 'react'
+import { motion, useScroll, useSpring } from 'framer-motion'
+import MarqueeBanner from './MarqueeBanner.jsx'
+
+// ── Arcade scroll progress bar ───────────────────────────────────────────
+function ScrollProgressBar() {
+  const { scrollYProgress } = useScroll()
+  const scaleX = useSpring(scrollYProgress, { stiffness: 100, damping: 35, mass: 0.5 })
+  return (
+    <motion.div
+      className="fixed inset-x-0 top-0 z-[60] h-1 origin-left bg-gradient-to-r from-arcadeYellow via-arcadeOrange to-terminalGreen"
+      style={{ scaleX }}
+    />
+  )
+}
+
+/**
+ * Simple sequential scroll - no sticky overlap
+ * Each page appears one after another in normal document flow
+ */
+export default function VerticalScroll({
+  sectionOneBackground,
+  sectionOneForeground,
+  sectionTwo,
+  sectionThree,
+  sectionFour, // Page 4 — rendered immediately after the Timeline (Glimpse collage)
+  sectionFive,
+}) {
+  return (
+    <>
+      <ScrollProgressBar />
+
+      <div className="relative">
+        
+        {/* ── Page 1 — Hero/Earth ── */}
+        <section className="relative min-h-screen w-full overflow-hidden flex items-center justify-center">
+          <div className="absolute inset-0 z-0">
+            {sectionOneBackground}
+          </div>
+          <div className="relative z-10 w-full h-screen flex flex-col">
+            {sectionOneForeground}
+          </div>
+        </section>
+
+        {/* ── Marquee Banner — between Hero and Themes ── */}
+        <MarqueeBanner />
+
+        {/* ── Page 2 — Saturn/Themes ──────────────────────────────────────
+         * sticky + z-50 makes this section behave like a card sitting on top
+         * of the Timeline page below. It pins to the viewport top while the
+         * Timeline sentinel scrolls past it, then naturally scrolls away,
+         * revealing the Timeline overlay cleanly underneath.
+         * overflow-hidden is kept so the Saturn scene doesn't bleed out.
+         */}
+        <section
+          className="relative w-full overflow-hidden"
+          style={{
+            height: '100vh',
+            position: 'sticky',
+            top: 0,
+            zIndex: 50,
+          }}
+        >
+          {sectionTwo}
+        </section>
+
+        {/* ── Page 3 — Timeline ── */}
+        {/* NOTE: no overflow-hidden here — it breaks position: sticky inside TimelinePage */}
+        {sectionThree && (
+          <section className="relative w-full">
+            {sectionThree}
+          </section>
+        )}
+
+        {/* ── Page 4 — Glimpse photo collage ──────────────────────────────
+         * sticky + z-40 makes Glimpse sit on top of the Timeline overlay
+         * (z-40) until it naturally scrolls off, preventing mixing.
+         */}
+        {sectionFour && (
+          <section
+            className="relative w-full overflow-hidden"
+            style={{
+              height: '100vh',
+              position: 'sticky',
+              top: 0,
+              zIndex: 45,
+            }}
+          >
+            {sectionFour}
+          </section>
+        )}
+
+        {/* ── Page 4 — Prize Pool ── */}
+        {sectionFive && (
+          <section className="relative w-full overflow-hidden">
+            {sectionFive}
+          </section>
+        )}
+
+      </div>
+    </>
+  )
+}
