@@ -1,4 +1,81 @@
-export default function Navbar({ openModal, soundEnabled, toggleChiptune }) {
+import { useEffect, useState } from 'react'
+
+function scrollToSection(id) {
+  // Use Lenis if available (set up in App.jsx) for buttery smooth scroll;
+  // fall back to native smooth scroll otherwise.
+  const el = document.getElementById(id)
+  if (!el) return
+  if (window.__lenis && typeof window.__lenis.scrollTo === 'function') {
+    window.__lenis.scrollTo(el, { duration: 1.4, offset: 0 })
+  } else {
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────── */
+/*  REGISTRATION COUNTDOWN                                                  */
+/*  Deadline: 30 Sept 2026, 12:00 PM (local time)                          */
+/* ─────────────────────────────────────────────────────────────────────── */
+function RegistrationCountdown() {
+  const DEADLINE = new Date('2026-09-30T12:00:00').getTime()
+
+  const compute = () => {
+    const diff = Math.max(0, DEADLINE - Date.now())
+    const days  = Math.floor(diff / (1000 * 60 * 60 * 24))
+    const hours = Math.floor((diff / (1000 * 60 * 60)) % 24)
+    const mins  = Math.floor((diff / (1000 * 60)) % 60)
+    const secs  = Math.floor((diff / 1000) % 60)
+    return { diff, days, hours, mins, secs }
+  }
+
+  const [t, setT] = useState(compute)
+
+  useEffect(() => {
+    const id = setInterval(() => setT(compute()), 1000)
+    return () => clearInterval(id)
+  }, [])
+
+  const closed = t.diff <= 0
+
+  return (
+    <div
+      className="flex items-center gap-3 bg-[#0a1f22]/90 backdrop-blur-md border border-amber-400/40 px-5 py-2.5 rounded-xl shadow-2xl"
+      title="Registration closes 30 Sept 2026, 12:00 PM"
+    >
+      <div className="flex flex-col leading-none">
+        <span className="font-pixel text-[10px] text-amber-300/70 tracking-widest uppercase mb-1">
+          {closed ? 'CLOSED' : 'REG. CLOSES IN'}
+        </span>
+        {closed ? (
+          <span className="font-pixel text-[14px] text-amber-300 font-bold tracking-wider">
+            30 SEP · 12:00 PM
+          </span>
+        ) : (
+          <div className="flex items-baseline gap-1.5 font-pixel font-bold text-amber-300 tabular-nums"
+               style={{ fontSize: '18px', textShadow: '0 0 8px rgba(251,191,36,0.45)' }}>
+            <span>{String(t.days).padStart(2, '0')}<span className="text-[10px] opacity-60 ml-0.5">D</span></span>
+            <span className="opacity-50">:</span>
+            <span>{String(t.hours).padStart(2, '0')}<span className="text-[10px] opacity-60 ml-0.5">H</span></span>
+            <span className="opacity-50">:</span>
+            <span>{String(t.mins).padStart(2, '0')}<span className="text-[10px] opacity-60 ml-0.5">M</span></span>
+            <span className="opacity-50">:</span>
+            <span>{String(t.secs).padStart(2, '0')}<span className="text-[10px] opacity-60 ml-0.5">S</span></span>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+export default function Navbar({ soundEnabled, toggleChiptune }) {
+  const navItems = [
+    { label: 'Themes',   target: 'section-themes'   },
+    { label: 'Timeline', target: 'section-timeline' },
+    { label: 'Glimpse',  target: 'section-glimpse'  },
+    { label: 'Prizes',   target: 'section-prizes'   },
+    { label: 'Our Team', target: 'section-team'     },
+  ]
+
   return (
     <header className="relative z-40 w-full px-6 py-4 lg:px-12 flex items-center justify-between">
       <div className="flex items-center gap-3">
@@ -6,46 +83,31 @@ export default function Navbar({ openModal, soundEnabled, toggleChiptune }) {
           <span className="font-pixel text-xs text-arcadeYellow font-bold tracking-wider mr-2">&lt;CF/5.0&gt;</span>
           <span className="font-pixel text-sm font-bold tracking-tight text-white">CODEFIESTA</span>
         </div>
-        <div className="hidden sm:flex items-center gap-1.5 bg-slate-900/60 backdrop-blur-md px-2.5 py-1 rounded-full text-[11px] font-bold text-teal-300 border border-teal-500/30">
-          <span className="inline-block w-2 h-2 rounded-full bg-terminalGreen animate-ping"></span>
-          <span className="uppercase tracking-wider font-pixel text-[10px]">LIVE IN 14 DAYS</span>
-        </div>
       </div>
 
       <nav className="hidden xl:flex items-center gap-2 bg-[#0c2626]/80 backdrop-blur-md p-1.5 rounded-xl border border-teal-500/30 shadow-2xl">
-        <button className="retro-nav-pill px-4 py-1.5 text-xs font-pixel font-semibold uppercase bg-white text-slate-900 rounded-lg border border-slate-700" onClick={() => openModal('aboutModal')}>
-          About
-        </button>
-        <button className="retro-nav-pill px-4 py-1.5 text-xs font-pixel font-semibold uppercase bg-[#184844] hover:bg-[#205e58] text-white rounded-lg border border-[#0e2c29]" onClick={() => openModal('themeModal')}>
-          Themes
-        </button>
-        <button className="retro-nav-pill px-4 py-1.5 text-xs font-pixel font-semibold uppercase bg-[#184844] hover:bg-[#205e58] text-white rounded-lg border border-[#0e2c29]" onClick={() => openModal('prizesModal')}>
-          Prizes
-        </button>
-        <button className="retro-nav-pill px-4 py-1.5 text-xs font-pixel font-semibold uppercase bg-[#184844] hover:bg-[#205e58] text-white rounded-lg border border-[#0e2c29]" onClick={() => openModal('timelineModal')}>
-          Timeline
-        </button>
-        <button className="retro-nav-pill px-4 py-1.5 text-xs font-pixel font-semibold uppercase bg-[#184844] hover:bg-[#205e58] text-white rounded-lg border border-[#0e2c29]" onClick={() => openModal('problemModal')}>
-          Tracks
-        </button>
+        {navItems.map((item) => (
+          <button
+            key={item.target}
+            className="retro-nav-pill px-4 py-1.5 text-xs font-pixel font-semibold uppercase bg-[#184844] hover:bg-[#205e58] text-white rounded-lg border border-[#0e2c29]"
+            onClick={() => scrollToSection(item.target)}
+          >
+            {item.label}
+          </button>
+        ))}
       </nav>
 
       <div className="flex items-center gap-3">
         <button
-          className="w-10 h-10 flex items-center justify-center rounded-lg bg-slate-900/60 hover:bg-slate-800/80 border border-teal-500/40 text-teal-300 transition backdrop-blur-md"
+          className="w-11 h-11 flex items-center justify-center rounded-lg bg-slate-900/60 hover:bg-slate-800/80 border border-teal-500/40 text-teal-300 transition backdrop-blur-md"
           onClick={toggleChiptune}
           title="Toggle Retro Sound"
         >
-          <svg className={`w-5 h-5 fill-current ${soundEnabled ? '' : 'opacity-30'}`} viewBox="0 0 24 24">
-            <path d="M14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77zm-2.5-1.23l-5 4h-3.5c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h3.5l5 4c.67.53 1.5.06 1.5-.8v-17.4c0-.86-.83-1.33-1.5-.8zm-1.5 13.71l-3.29-2.71h-1.71v-4h1.71l3.29-2.71v9.42z"></path>
+          <svg className="w-6 h-6 fill-current" viewBox="0 0 24 24">
+            <path d="M12 12c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm0 2c-3.33 0-10 1.67-10 5v2h20v-2c0-3.33-6.67-5-10-5z" />
           </svg>
         </button>
-        <a className="group relative inline-flex items-center justify-center px-6 py-2.5 overflow-hidden rounded-lg bg-[#ef6a43] text-white font-pixel text-xs tracking-wider font-bold border-2 border-slate-900 shadow-[0_4px_0_#9c381c] hover:shadow-[0_2px_0_#9c381c] hover:translate-y-0.5 active:translate-y-1 transition-all" href="#register">
-          <span className="relative z-10 flex items-center gap-2">
-            REGISTER NOW
-            <span className="inline-block w-2 h-2 bg-yellow-300 rounded-sm animate-pulse"></span>
-          </span>
-        </a>
+        <RegistrationCountdown />
       </div>
     </header>
   )

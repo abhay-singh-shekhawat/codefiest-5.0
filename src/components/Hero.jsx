@@ -46,6 +46,7 @@ export default function Hero({ playArcadeBeep }) {
 
       targetX = normX
       targetY = normY
+      wake()
     }
 
     const onMouseMove = (e) => handleCursorMove(e.clientX, e.clientY)
@@ -58,13 +59,8 @@ export default function Hero({ playArcadeBeep }) {
     window.addEventListener('mousemove', onMouseMove)
     window.addEventListener('touchmove', onTouchMove, { passive: true })
 
-    let animationId
-    function renderDynamicTitle() {
-      animationId = requestAnimationFrame(renderDynamicTitle)
-      const lerp = 0.085
-      currentX += (targetX - currentX) * lerp
-      currentY += (targetY - currentY) * lerp
-
+    // Render helper — identical transform/shadow math to the original loop
+    function writeTitle() {
       const maxPitch = 20
       const maxYaw = 24
       const maxRoll = 5
@@ -104,10 +100,55 @@ export default function Hero({ playArcadeBeep }) {
         line3Ref.current.style.transform = `translate3d(${shiftX * 0.7}px, ${shiftY * 0.7}px, 35px)`
       }
     }
-    animationId = requestAnimationFrame(renderDynamicTitle)
+
+    // The tilt only changes while the pointer moves, so the rAF chain runs
+    // only from a pointer event until the easing converges, and only while
+    // the hero is near the viewport — no more idle per-frame style writes.
+    let rafId = 0
+    let inView = true
+
+    function tick() {
+      rafId = 0
+      if (!inView) return
+      const lerp = 0.085
+      currentX += (targetX - currentX) * lerp
+      currentY += (targetY - currentY) * lerp
+
+      const settled =
+        Math.abs(targetX - currentX) < 0.0005 &&
+        Math.abs(targetY - currentY) < 0.0005
+
+      if (settled) {
+        currentX = targetX
+        currentY = targetY
+        writeTitle()
+        return   // converged — stop until the next pointer event
+      }
+      writeTitle()
+      rafId = requestAnimationFrame(tick)
+    }
+
+    function wake() {
+      if (!rafId && inView) rafId = requestAnimationFrame(tick)
+    }
+
+    // Write the initial rest state once (identical to the old first frame)
+    writeTitle()
+
+    // Pause entirely while the hero is scrolled off-screen
+    const heroRoot = tiltContainer && tiltContainer.parentElement
+    const observer = heroRoot
+      ? new IntersectionObserver(([entry]) => {
+          inView = entry.isIntersecting
+          if (!inView && rafId) { cancelAnimationFrame(rafId); rafId = 0 }
+          else if (inView) wake()
+        }, { threshold: 0 })
+      : null
+    if (observer && heroRoot) observer.observe(heroRoot)
 
     return () => {
-      cancelAnimationFrame(animationId)
+      if (rafId) cancelAnimationFrame(rafId)
+      if (observer) observer.disconnect()
       window.removeEventListener('mousemove', onMouseMove)
       window.removeEventListener('touchmove', onTouchMove)
     }
@@ -117,7 +158,6 @@ export default function Hero({ playArcadeBeep }) {
     <main className="relative z-20 flex-1 flex flex-col items-center justify-center px-4">
       <div className="relative z-10 flex flex-col items-center justify-center cursor-default pointer-events-auto select-none" id="tiltContainer" ref={tiltContainerRef}>
         <div className="mb-3 px-3 py-1 bg-[#091f21]/90 backdrop-blur-md border border-teal-400/40 rounded-full flex items-center gap-2 shadow-lg">
-          <span className="w-2 h-2 rounded-full bg-arcadeYellow"></span>
           <span className="font-pixel text-[11px] text-teal-200 tracking-widest">ANNUAL NATIONAL LEVEL HACKATHON</span>
         </div>
         <div className="voxel-3d-text font-pixel text-center text-7xl sm:text-8xl md:text-9xl font-black tracking-normal leading-[0.88]" ref={titleRef} id="mainVoxelTitle">
@@ -126,10 +166,10 @@ export default function Hero({ playArcadeBeep }) {
           <div className="block voxel-yellow-block text-6xl sm:text-7xl md:text-8xl transform transition-transform duration-200" id="titleLine3" ref={line3Ref}>5.0</div>
         </div>
         <div className="mt-8 relative z-20 flex flex-col items-center">
-          <a className="arcade-begin-btn inline-block px-10 py-3.5 rounded-lg text-slate-900 font-pixel text-lg sm:text-xl font-black tracking-widest uppercase transition transform active:scale-95 text-center" href="#portal">
-            BEGIN
+          <a className="arcade-begin-btn inline-block px-10 py-3.5 rounded-lg text-slate-900 font-pixel text-lg sm:text-xl font-black tracking-widest uppercase transition transform active:scale-95 text-center" href="#register">
+            REGISTER NOW
           </a>
-          <span className="mt-2.5 font-pixel text-[11px] text-cyan-200 font-bold tracking-wider uppercase opacity-90">[ Press Space or Click to Enter Arena ]</span>
+          <span className="mt-2.5 font-pixel text-[11px] text-cyan-200 font-bold tracking-wider uppercase opacity-90">[ Closes 30 Sept · 12:00 PM ]</span>
         </div>
       </div>
     </main>

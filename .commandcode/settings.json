@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Shell(cd:*)",
+      "Shell(npx vite build 2 >& 1)",
+      "Shell(Select-Object:*)",
+      "powershell",
+      "Shell(npm:*)"
+    ],
+    "deny": [],
+    "defaultMode": "default"
+  }
+}

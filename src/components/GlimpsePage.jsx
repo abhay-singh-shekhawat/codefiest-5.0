@@ -39,11 +39,16 @@
  *  – prefers-reduced-motion → static scattered collage fallback.
  */
 
-import { useRef, useEffect } from 'react'
+import { useRef, useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 
-/* ── Image pool — swap with local assets when ready ─────────────────── */
-const PHOTOS = Array.from({ length: 24 }, (_, i) =>
+/* ── Image pool ───────────────────────────────────────────────────────
+ * Photos are loaded at runtime from /cloudinary-photos.json, which is a
+ * pre-generated manifest of every image in the Cloudinary account
+ * (see fetch-cloudinary.cjs). This keeps the API secret out of the
+ * browser bundle while letting us cycle through every uploaded image.
+ */
+const FALLBACK_PHOTOS = Array.from({ length: 24 }, (_, i) =>
   `https://picsum.photos/seed/glimpse-${String(i + 1).padStart(2, '0')}/480/560`,
 )
 
@@ -90,10 +95,28 @@ const easeInOutCubic  = (t) =>
 export default function GlimpsePage() {
   const stageRef  = useRef(null)
   const animIdRef = useRef(null)
+  const [photos, setPhotos] = useState(FALLBACK_PHOTOS)
+
+  // Load the real Cloudinary manifest once on mount.
+  // Falls back silently to the seeded picsum pool if the JSON is missing.
+  useEffect(() => {
+    let cancelled = false
+    fetch('/cloudinary-photos.json')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (cancelled || !Array.isArray(data) || data.length === 0) return
+        setPhotos(data.map((d) => d.url).filter(Boolean))
+      })
+      .catch(() => { /* keep fallback */ })
+    return () => { cancelled = true }
+  }, [])
 
   useEffect(() => {
     const stage = stageRef.current
     if (!stage) return
+
+    // Snapshot the current photo list — re-run when the manifest resolves.
+    const PHOTOS = photos
 
     const reduceMotion =
       typeof window.matchMedia === 'function' &&
@@ -343,7 +366,7 @@ export default function GlimpsePage() {
       })
       while (stage.firstChild) stage.removeChild(stage.firstChild)
     }
-  }, [])
+  }, [photos])
 
   return (
     <motion.section

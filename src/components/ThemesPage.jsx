@@ -1,7 +1,9 @@
-import { useEffect, useRef, useCallback } from 'react'
+import { useEffect, useRef } from 'react'
 import { motion } from 'framer-motion'
 import * as THREE from 'three'
 import deviceTier from '../hooks/useDeviceTier.js'
+import { createLayerRenderer } from '../three/rendererPool.js'
+import DeferredRender from './DeferredRender.jsx'
 
 const { isMobile, isLowEndDevice } = deviceTier
 const DUST_COUNT = isMobile ? 60 : 180
@@ -40,7 +42,6 @@ function StardustCanvas() {
     const canvas = ref.current
     if (!canvas) return
     const ctx = canvas.getContext('2d')
-    let rafId
     let W = canvas.offsetWidth
     let H = canvas.offsetHeight
     canvas.width  = W
@@ -58,7 +59,7 @@ function StardustCanvas() {
       hue:  Math.random() > 0.55 ? 195 : 270,  // cyan or purple
     }))
 
-    const draw = () => {
+    const step = () => {
       ctx.clearRect(0, 0, W, H)
       for (const p of particles) {
         p.x  += p.vx
@@ -73,9 +74,31 @@ function StardustCanvas() {
         ctx.fillStyle = `hsla(${p.hue}, 80%, 85%, ${p.alpha})`
         ctx.fill()
       }
-      rafId = requestAnimationFrame(draw)
     }
-    draw()
+
+    // Fully pause the rAF chain when the canvas is off-screen or the tab
+    // is hidden (mirrors the Three.js loop gating in this section).
+    let visible = true
+    let rafId = 0
+    const tick = (now) => {
+      rafId = 0
+      if (!visible || document.hidden) return
+      step()
+      rafId = requestAnimationFrame(tick)
+    }
+    const syncLoop = () => {
+      const shouldRun = visible && !document.hidden
+      if (shouldRun && !rafId) rafId = requestAnimationFrame(tick)
+      else if (!shouldRun && rafId) { cancelAnimationFrame(rafId); rafId = 0 }
+    }
+    const observer = new IntersectionObserver(
+      ([entry]) => { visible = entry.isIntersecting; syncLoop() },
+      { threshold: 0 },
+    )
+    observer.observe(canvas)
+    const onVisibilityChange = () => syncLoop()
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    syncLoop()
 
     const onResize = () => {
       W = canvas.offsetWidth
@@ -86,7 +109,9 @@ function StardustCanvas() {
     window.addEventListener('resize', onResize)
 
     return () => {
-      cancelAnimationFrame(rafId)
+      if (rafId) cancelAnimationFrame(rafId)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+      observer.disconnect()
       window.removeEventListener('resize', onResize)
     }
   }, [])
@@ -104,25 +129,21 @@ function StardustCanvas() {
 }
 
 /**
- * ThemesPage (OPTIMISED)
+ * ThemesSceneLayer — owns the WebGL Saturn scene + ambient stardust canvas.
+ * Rendered lazily by <DeferredRender>, so the WebGL context, the procedural
+ * texture build and the 12 rock-PNG fetches only happen when section 2
+ * approaches the viewport.
  *
- * Key performance fixes:
- *   – Ring rocks reduced 4200 → 1500 (visually identical at this scale)
- *   – Procedural texture reduced 2048×1024 → 1024×512
- *   – Planet sphere segments 96×64 → 64×48
- *   – CRITICAL: Eliminated React re-render storm — tooltip positions are now
- *     managed via refs + direct DOM manipulation instead of calling
- *     setNodePositions/setHovered/setPulseTime at 60fps
- *   – IntersectionObserver pauses the rAF loop when off-screen
+ * Performance architecture:
+ *   – Ring rocks instanced (1500 in a single InstancedMesh draw call)
+ *   – Tooltip positions via refs + direct DOM — zero React re-renders at 60fps
+ *   – Renderer from shared rendererPool (tiered DPR policy)
+ *   – rAF chain fully pauses off-screen / tab-hidden; delta clamped on resume
+ *   – All geometries, materials and textures disposed on unmount
  */
-export default function ThemesPage() {
+function ThemesSceneLayer() {
   const containerRef = useRef(null)
-  const animIdRef    = useRef(null)
   const tooltipContainerRef = useRef(null)
-
-  // Refs to manage tooltip DOM directly (avoids React re-renders at 60fps)
-  const tooltipRefs = useRef([])
-  const prevHoveredRef = useRef(null)
 
   useEffect(() => {
     const container = containerRef.current
@@ -140,10 +161,9 @@ export default function ThemesPage() {
     // Shift model up so the full Saturn + rings are visible in viewport
     const modelOffsetY = 2.5
 
-    const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: false, powerPreference: 'high-performance' })
-    renderer.setSize(W, H)
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
-    renderer.setClearColor(0x000000, 0)
+    const { renderer, setSize: setRendererSize, dispose: disposeRenderer } =
+      createLayerRenderer({ allowHighDpr: true })
+    setRendererSize(W, H)
     container.appendChild(renderer.domElement)
 
     // ── Lighting ────────────────────────────────────────────────────────────
@@ -316,10 +336,12 @@ export default function ThemesPage() {
 
     const loader  = new THREE.TextureLoader()
     const sprites  = []
+    const loadedTextures = []   // rock PNG textures — disposed on unmount
 
     ROCK_IMAGES.forEach((src, idx) => {
       const tex = loader.load(src)
       tex.colorSpace = THREE.SRGBColorSpace
+      loadedTextures.push(tex)
       const mat = new THREE.SpriteMaterial({
         map: tex,
         transparent: true,
@@ -349,7 +371,7 @@ export default function ThemesPage() {
       const h = container.clientHeight || window.innerHeight
       camera.aspect = w / h
       camera.updateProjectionMatrix()
-      renderer.setSize(w, h)
+      setRendererSize(w, h)
     }
     window.addEventListener('resize', onResize)
 
@@ -365,15 +387,37 @@ export default function ThemesPage() {
     container.addEventListener('mousemove', onMouseMove)
 
     // ── Visibility gating ────────────────────────────────────────────────────
+    // rAF chain fully stops off-screen / tab-hidden; the first delta after
+    // resume is clamped so rotation/orbits never jump after a pause.
     let visible = true
+    let animationId = 0
+    let lastTime = performance.now()
     const observer = new IntersectionObserver(
-      ([entry]) => { visible = entry.isIntersecting },
+      ([entry]) => {
+        visible = entry.isIntersecting
+        syncLoop()
+      },
       { threshold: 0 },
     )
     observer.observe(container)
 
+    const syncLoop = () => {
+      const shouldRun = visible && !document.hidden
+      if (shouldRun && !animationId) {
+        animationId = requestAnimationFrame(animate)
+      } else if (!shouldRun && animationId) {
+        cancelAnimationFrame(animationId)
+        animationId = 0
+      }
+    }
+    const onVisibilityChange = () => {
+      if (!document.hidden) lastTime = performance.now()
+      syncLoop()
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange)
+
     // ── Render loop (NO React setState calls) ────────────────────────────────
-    const clock  = new THREE.Clock()
+    let elapsed = 0
     const tmpVec  = new THREE.Vector3()
     const ORBIT_SPEED = 0.18
     const SATURN_SPIN = 0.35   // faster than orbit so rotation is clearly visible
@@ -403,15 +447,13 @@ export default function ThemesPage() {
       return { wrapper, label, arrow, color: NODE_COLORS[idx] }
     })
 
-    const animate = () => {
-      animIdRef.current = requestAnimationFrame(animate)
+    const animate = (now) => {
+      animationId = 0
+      if (!visible || document.hidden) return
 
-      // Always drain the clock delta so we never get a giant stale value
-      // when the section comes back into view after being hidden.
-      const delta   = clock.getDelta()
-      const elapsed = clock.getElapsedTime()
-
-      if (!visible) return
+      const delta = Math.min((now - lastTime) * 0.001, 0.05)
+      lastTime = now
+      elapsed += delta
 
       outerAtmoMat.opacity = 0.05 + 0.04 * Math.sin(elapsed * 1.4)
 
@@ -475,21 +517,56 @@ export default function ThemesPage() {
       })
 
       renderer.render(scene, camera)
+      syncLoop()
     }
-    animate()
+    syncLoop()
 
     return () => {
-      cancelAnimationFrame(animIdRef.current)
+      if (animationId) cancelAnimationFrame(animationId)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
       observer.disconnect()
       window.removeEventListener('resize', onResize)
       container.removeEventListener('mousemove', onMouseMove)
       // Clean up tooltip DOM elements
       tooltipEls.forEach(el => el.wrapper.remove())
-      renderer.dispose()
       if (container.contains(renderer.domElement)) container.removeChild(renderer.domElement)
+      disposeRenderer()
+      // Dispose every geometry and material (and any textures referenced
+      // by material properties), plus the separately-tracked textures.
+      scene.traverse((obj) => {
+        if (obj.geometry) obj.geometry.dispose()
+        if (obj.material) {
+          const mats = Array.isArray(obj.material) ? obj.material : [obj.material]
+          mats.forEach((m) => {
+            Object.keys(m).forEach((key) => {
+              const v = m[key]
+              if (v && v.isTexture) v.dispose()
+            })
+            m.dispose()
+          })
+        }
+      })
+      loadedTextures.forEach((t) => t.dispose())
+      satTex.dispose()
     }
   }, [])
 
+  return (
+    <div style={{ width: '100%', height: '100%', position: 'relative' }}>
+      {/* Stardust haze canvas — slow drifting particles behind Saturn */}
+      <StardustCanvas />
+      <div ref={containerRef} style={{ width: '100%', height: '100%', position: 'relative', zIndex: 1 }} />
+
+      {/* Tooltip overlay — managed via refs, not React state */}
+      <div ref={tooltipContainerRef} className="absolute inset-0 pointer-events-none" style={{ zIndex: 10 }} />
+    </div>
+  )
+}
+
+/**
+ * ThemesPage — section copy + headings over the lazily-mounted render layers.
+ */
+export default function ThemesPage() {
   return (
     <div style={{
       width: '100%', height: '100%', position: 'relative',
@@ -499,9 +576,10 @@ export default function ThemesPage() {
         #030712
       `.replace(/\s+/g, ' ').trim(),
     }}>
-      {/* Stardust haze canvas — slow drifting particles behind Saturn */}
-      <StardustCanvas />
-      <div ref={containerRef} style={{ width: '100%', height: '100%', position: 'relative', zIndex: 1 }} />
+      {/* Heavy render layers mount only as this section nears the viewport */}
+      <DeferredRender className="absolute inset-0">
+        <ThemesSceneLayer />
+      </DeferredRender>
 
       {/* ── "CHOOSE YOUR BATTLEGROUND" heading ── */}
       <div
@@ -522,9 +600,6 @@ export default function ThemesPage() {
           Choose Your Battleground
         </motion.h2>
       </div>
-
-      {/* Tooltip overlay — managed via refs, not React state */}
-      <div ref={tooltipContainerRef} className="absolute inset-0 pointer-events-none" style={{ zIndex: 10 }} />
     </div>
   )
 }

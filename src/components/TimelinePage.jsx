@@ -54,9 +54,15 @@ export default function TimelinePage() {
     return () => window.removeEventListener('resize', onResize)
   }, [])
 
-  // ── Scroll handler ────────────────────────────────────────────────────
+  // ── Scroll handler (rAF-coalesced) ─────────────────────────────────────
+  // Raw scroll events can fire several times per frame; computing progress
+  // inside requestAnimationFrame caps React re-renders at one per frame
+  // while keeping the same values.
   useEffect(() => {
-    function onScroll() {
+    let rafId = 0
+
+    function compute() {
+      rafId = 0
       const sentinel = sentinelRef.current
       if (!sentinel) return
 
@@ -94,9 +100,15 @@ export default function TimelinePage() {
       }
     }
 
+    function onScroll() {
+      if (rafId) return
+      rafId = requestAnimationFrame(compute)
+    }
+
     window.addEventListener('scroll', onScroll, { passive: true })
-    onScroll()
+    compute()
     return () => {
+      if (rafId) cancelAnimationFrame(rafId)
       window.removeEventListener('scroll', onScroll)
       if (unpinTimerRef.current) clearTimeout(unpinTimerRef.current)
     }

@@ -74,32 +74,52 @@ export default function BackgroundDecor() {
   }, [])
 
   // ── Animate nebula drift ──────────────────────────────────────────────────
+  // Translate-only drift over a pre-baked scale(1.03) layer. The transform
+  // write is a pure compositor move; the loop fully pauses when the tab is
+  // hidden.
   useEffect(() => {
     const canvas = nebulaRef.current
     if (!canvas) return
-    let animId
+    let animId = 0
     const drift = { x: 0, y: 0, tx: 0, ty: 0 }
     let t = 0
 
-    const tick = (now) => {
-      animId = requestAnimationFrame(tick)
+    const tick = () => {
+      animId = 0
+      if (document.hidden) return
       t += 0.002
       drift.tx = Math.sin(t * 0.7) * 12
       drift.ty = Math.cos(t * 0.45) * 8
       drift.x  += (drift.tx - drift.x) * 0.01
       drift.y  += (drift.ty - drift.y) * 0.01
       canvas.style.transform = `translate(${drift.x}px, ${drift.y}px) scale(1.03)`
+      animId = requestAnimationFrame(tick)
     }
+    const onVisibilityChange = () => {
+      if (document.hidden) {
+        if (animId) { cancelAnimationFrame(animId); animId = 0 }
+      } else if (!animId) {
+        animId = requestAnimationFrame(tick)
+      }
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange)
     animId = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(animId)
+    return () => {
+      if (animId) cancelAnimationFrame(animId)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+    }
   }, [])
 
   // ── Shooting stars ─────────────────────────────────────────────────────────
+  // Instead of clearing the whole viewport every frame, each streak erases
+  // only its own previous bounding box (+4px AA pad) before redrawing — the
+  // canvas is transparent apart from the few active streaks, so per-streak
+  // clears keep it pixel-identical. Loop pauses when the tab is hidden.
   useEffect(() => {
     const canvas = shootRef.current
     if (!canvas) return
     const ctx = canvas.getContext('2d')
-    let animId
+    let animId = 0
 
     const resize = () => {
       canvas.width  = window.innerWidth
@@ -113,13 +133,15 @@ export default function BackgroundDecor() {
     let prevTime  = performance.now()
 
     const draw = (now) => {
-      animId = requestAnimationFrame(draw)
+      // Schedule first (defensive) — a stray exception mid-frame must never
+      // be able to kill the animation chain silently.
+      if (!document.hidden) animId = requestAnimationFrame(draw)
+      else { animId = 0; return }
       const delta = Math.min((now - prevTime) / 1000, 0.05)
       prevTime = now
 
       const W = canvas.width
       const H = canvas.height
-      ctx.clearRect(0, 0, W, H)
 
       // Spawn shooting star randomly
       if (now > nextSpawn) {
@@ -129,6 +151,16 @@ export default function BackgroundDecor() {
 
       for (let i = stars.length - 1; i >= 0; i--) {
         const s = stars[i]
+        const dirX = Math.cos(Math.atan2(s.vy, s.vx))
+        const dirY = Math.sin(Math.atan2(s.vy, s.vx))
+
+        // Erase the streak drawn last frame (nothing to erase on spawn)
+        if (s.lastX0 !== undefined) {
+          const minX = Math.min(s.lastX0, s.lastX1) - 4
+          const minY = Math.min(s.lastY0, s.lastY1) - 4
+          ctx.clearRect(minX, minY, Math.abs(s.lastX1 - s.lastX0) + 8, Math.abs(s.lastY1 - s.lastY0) + 8)
+        }
+
         s.life += delta
         if (s.life >= s.maxLife) { stars.splice(i, 1); continue }
 
@@ -142,15 +174,15 @@ export default function BackgroundDecor() {
           ? 1 - (progress - 0.7) / 0.3
           : 1
 
-        // tail gradient
-        const tx0 = s.x - Math.cos(Math.atan2(s.vy, s.vx)) * s.len
-        const ty0 = s.y - Math.sin(Math.atan2(s.vy, s.vx)) * s.len
+        // tail gradient — hex → rgba with the fade alpha baked in
+        const tx0 = s.x - dirX * s.len
+        const ty0 = s.y - dirY * s.len
+        const hexR = parseInt(s.color.slice(1, 3), 16)
+        const hexG = parseInt(s.color.slice(3, 5), 16)
+        const hexB = parseInt(s.color.slice(5, 7), 16)
         const grd = ctx.createLinearGradient(tx0, ty0, s.x, s.y)
         grd.addColorStop(0, 'transparent')
-        grd.addColorStop(1, s.color.replace(')', `,${fadeAlpha})`).replace('#','rgba(').replace(
-          /rgba\((..)(..)(..),/,
-          (_m, r, g, b) => `rgba(${parseInt(r,16)},${parseInt(g,16)},${parseInt(b,16)},`
-        ))
+        grd.addColorStop(1, `rgba(${hexR},${hexG},${hexB},${fadeAlpha})`)
 
         ctx.save()
         ctx.globalAlpha = fadeAlpha
@@ -169,12 +201,29 @@ export default function BackgroundDecor() {
         ctx.arc(s.x, s.y, s.width * 1.2, 0, Math.PI*2)
         ctx.fill()
         ctx.restore()
+
+        // Remember this streak for next frame's erase
+        s.lastX0 = tx0
+        s.lastY0 = ty0
+        s.lastX1 = s.x
+        s.lastY1 = s.y
       }
     }
+
+    const onVisibilityChange = () => {
+      if (document.hidden) {
+        if (animId) { cancelAnimationFrame(animId); animId = 0 }
+      } else {
+        prevTime = performance.now()
+        if (!animId) animId = requestAnimationFrame(draw)
+      }
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange)
     animId = requestAnimationFrame(draw)
 
     return () => {
-      cancelAnimationFrame(animId)
+      if (animId) cancelAnimationFrame(animId)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
       window.removeEventListener('resize', resize)
     }
   }, [])

@@ -23,8 +23,9 @@ export default function VerticalScroll({
   sectionOneForeground,
   sectionTwo,
   sectionThree,
-  sectionFour, // Page 4 — rendered immediately after the Timeline (Glimpse collage)
+  sectionFour,
   sectionFive,
+  sectionSix,
 }) {
   return (
     <>
@@ -53,6 +54,7 @@ export default function VerticalScroll({
          * overflow-hidden is kept so the Saturn scene doesn't bleed out.
          */}
         <section
+          id="section-themes"
           className="relative w-full overflow-hidden"
           style={{
             height: '100vh',
@@ -67,7 +69,7 @@ export default function VerticalScroll({
         {/* ── Page 3 — Timeline ── */}
         {/* NOTE: no overflow-hidden here — it breaks position: sticky inside TimelinePage */}
         {sectionThree && (
-          <section className="relative w-full">
+          <section id="section-timeline" className="relative w-full">
             {sectionThree}
           </section>
         )}
@@ -78,6 +80,7 @@ export default function VerticalScroll({
          */}
         {sectionFour && (
           <section
+            id="section-glimpse"
             className="relative w-full overflow-hidden"
             style={{
               height: '100vh',
@@ -90,10 +93,18 @@ export default function VerticalScroll({
           </section>
         )}
 
-        {/* ── Page 4 — Prize Pool ── */}
+        {/* ── Page 5 — Prize Pool ── */}
+        {/* NOTE: no overflow-hidden — PrizePoolPage uses position:sticky internally */}
         {sectionFive && (
-          <section className="relative w-full overflow-hidden">
+          <section id="section-prizes" className="relative w-full">
             {sectionFive}
+          </section>
+        )}
+
+        {/* ── Page 6 — Team ── */}
+        {sectionSix && (
+          <section id="section-team" className="relative w-full overflow-hidden">
+            {sectionSix}
           </section>
         )}
 

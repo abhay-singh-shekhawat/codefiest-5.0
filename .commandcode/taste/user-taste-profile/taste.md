@@ -1,0 +1,18 @@
+# User Taste Profile
+- Prefers removing/simplifying a non-working feature (e.g. a broken scroll animation) rather than trying to fix it, when the broken behavior is blocking other parts of the app. Confidence: 0.7
+- Reports bugs in terms of the visible user-facing symptom ("black screen after X page", "empty screen between pages") rather than pointing at specific code, and expects root-cause tracing from the symptom. Confidence: 0.8
+- Iterates quickly: when a first fix attempt misses the actual cause, accepts an immediate pivot to the real issue without ceremony. Confidence: 0.7
+- Prefers page-specific background fills to be removed when they obscure the shared/default application background, allowing the global background treatment to show through. Confidence: 0.95
+- Prefers the final Team page to use the application's default/global background rather than a page-specific dark background. Confidence: 0.95
+- Gives concise, direct UI change requests and expects the implementation to follow the stated visual intent without unnecessary discussion. Confidence: 0.9
+- Strongly prefers minimal content in UI components (name + role only, no fluff fields) — explicitly states "keep the content as much less as possible" and "the ui must look clean." Confidence: 0.9
+- Dislikes generic AI-style decorative clutter (e.g. "bulb dots" scattered everywhere, redundant glow halos, scanline overlays, status badges, social pills) and explicitly asks for them to be omitted. Confidence: 0.95
+- Wants UI to match the established site theme/visual vocabulary rather than look like generic AI output — will reject a component as "made from ai" / "do not match the theme" if it feels off. Confidence: 0.9
+- Prefers repeating a single, consistent component vocabulary across pages (e.g. the same chamfered clip-path panels) rather than inventing a new style per page. Confidence: 0.8
+- Expects navigation/UI affordances (labels, button text, tab order) to match the actual page sequence — will call out mismatched order between nav and pages and expect it fixed. Confidence: 0.85
+- Prefers smooth in-page section navigation (scroll-to-section) over modal/popup-based navigation when the content is already presented on its own page. Confidence: 0.85
+- Often bundles multiple related changes into a single request (e.g. "fix the text AND make it navigate smoothly") and expects both handled in one pass. Confidence: 0.75
+- Expects external service credentials to remain server-side and not be exposed in the client bundle; prefers generating a safe public asset manifest for frontend consumption. Confidence: 0.95
+- Prefers using all available assets from the configured external source rather than a small handpicked subset when requesting integration (e.g. all Cloudinary images). Confidence: 0.85
+- Values graceful fallbacks for external asset loading so the UI does not go blank if the service or manifest is unavailable. Confidence: 0.8
+- Prefers dependency-light tooling for one-off asset-fetching tasks, using built-in runtime APIs when package installation is unreliable or unnecessary. Confidence: 0.75

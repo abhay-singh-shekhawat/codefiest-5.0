@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import * as THREE from 'three'
 import deviceTier from '../hooks/useDeviceTier.js'
+import { createLayerRenderer } from '../three/rendererPool.js'
 
 const { isMobile } = deviceTier
 
@@ -11,7 +12,10 @@ const { isMobile } = deviceTier
  *   – Earth procedural texture 2048×1024 → 1024×512 (continent coords scaled)
  *   – Cloud canvas 1024×512 → 512×256
  *   – Antialias disabled (background scene)
- *   – IntersectionObserver pauses rAF when off-screen
+ *   – Renderer built via shared rendererPool (unified DPR policy)
+ *   – IntersectionObserver + visibilitychange fully pause the rAF chain;
+ *     the first delta after resume is clamped so motion never jumps
+ *   – All textures disposed on unmount
  */
 export default function GlobeBackground({ containerId = 'threejs-container' }) {
   const containerRef = useRef(null)
@@ -28,12 +32,11 @@ export default function GlobeBackground({ containerId = 'threejs-container' }) {
     camera.position.set(0, 2.8, 13.5)
     camera.lookAt(0, 0, 0)
 
-    const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: false, powerPreference: 'high-performance' })
-    renderer.setClearColor(0x000000, 0)
-    renderer.setSize(width, height)
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isMobile ? 1 : 2))
+    const { renderer, setSize: setRendererSize, dispose: disposeRenderer } =
+      createLayerRenderer({ allowHighDpr: true })
     renderer.toneMapping = THREE.ACESFilmicToneMapping
     renderer.toneMappingExposure = 1.15
+    setRendererSize(width, height)
     container.appendChild(renderer.domElement)
 
     const ambientLight = new THREE.AmbientLight(0x0a1c22, 0.75)
@@ -244,7 +247,7 @@ export default function GlobeBackground({ containerId = 'threejs-container' }) {
       const h = container.clientHeight || window.innerHeight
       camera.aspect = w / h
       camera.updateProjectionMatrix()
-      renderer.setSize(w, h)
+      setRendererSize(w, h)
     }
 
     // Skip mouse parallax on touch devices — no cursor, saves listener overhead
@@ -254,20 +257,41 @@ export default function GlobeBackground({ containerId = 'threejs-container' }) {
     window.addEventListener('resize', handleResize)
 
     // ── Visibility gating ────────────────────────────────────────────────────
+    // The rAF chain fully stops when the scene is off-screen or the tab is
+    // hidden, and restarts on demand. The first delta after a resume is
+    // clamped so rotations/meteors never jump after a long pause.
     let visible = true
+    let lastTime = performance.now()
+    let animationId = 0
     const observer = new IntersectionObserver(
-      ([entry]) => { visible = entry.isIntersecting },
+      ([entry]) => {
+        visible = entry.isIntersecting
+        syncLoop()
+      },
       { threshold: 0 },
     )
     observer.observe(container)
 
-    let lastTime = performance.now()
-    let animationId
-    function animate(now) {
-      animationId = requestAnimationFrame(animate)
-      if (!visible) return
+    const syncLoop = () => {
+      const shouldRun = visible && !document.hidden
+      if (shouldRun && !animationId) {
+        animationId = requestAnimationFrame(animate)
+      } else if (!shouldRun && animationId) {
+        cancelAnimationFrame(animationId)
+        animationId = 0
+      }
+    }
+    const onVisibilityChange = () => {
+      if (!document.hidden) lastTime = performance.now()
+      syncLoop()
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange)
 
-      const delta = (now - lastTime) * 0.001
+    function animate(now) {
+      animationId = 0
+      if (!visible || document.hidden) return
+
+      const delta = Math.min((now - lastTime) * 0.001, 0.05)
       lastTime = now
 
       earthMesh.rotation.y += delta * 0.085
@@ -305,18 +329,20 @@ export default function GlobeBackground({ containerId = 'threejs-container' }) {
       }
 
       renderer.render(scene, camera)
+      syncLoop()
     }
-    animationId = requestAnimationFrame(animate)
+    syncLoop()
 
     return () => {
-      cancelAnimationFrame(animationId)
+      if (animationId) cancelAnimationFrame(animationId)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
       observer.disconnect()
       if (!isMobile) window.removeEventListener('mousemove', handleMouseMove)
       window.removeEventListener('resize', handleResize)
       if (renderer.domElement && renderer.domElement.parentNode) {
         renderer.domElement.parentNode.removeChild(renderer.domElement)
       }
-      renderer.dispose()
+      disposeRenderer()
       scene.traverse((obj) => {
         if (obj.geometry) obj.geometry.dispose()
         if (obj.material) {
@@ -324,6 +350,7 @@ export default function GlobeBackground({ containerId = 'threejs-container' }) {
           else obj.material.dispose()
         }
       })
+      ;[earthTex, bumpTex, cloudTex, moonTex].forEach((t) => t.dispose())
     }
   }, [])
 

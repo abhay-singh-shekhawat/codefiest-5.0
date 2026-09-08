@@ -296,10 +296,12 @@ html.lenis body {
   position: absolute;
   left: 0;
   top: 0;
-  /* glassmorphism base */
-  background: rgba(15, 23, 42, 0.60);
-  backdrop-filter: blur(8px) saturate(1.6);
-  -webkit-backdrop-filter: blur(8px) saturate(1.6);
+  /* glassmorphism base — PERF: no backdrop-filter here. 28 cards animate
+     translateZ under a perspective stage every frame; live backdrop blur
+     forced per-card re-blur + re-composite at 60fps. The cards only ever
+     float over the plain starfield, so a slightly more opaque tinted
+     background reproduces the look at a fraction of the cost. */
+  background: rgba(15, 23, 42, 0.72);
   /* thin cyan glow border */
   border: 1px solid rgba(56, 189, 248, 0.30);
   border-radius: 4px;
@@ -310,7 +312,6 @@ html.lenis body {
     inset 0 0 0 1px rgba(56, 189, 248, 0.06);
   transform-origin: center center;
   transform-style: flat;
-  will-change: transform, opacity;
   -webkit-tap-highlight-color: transparent;
   backface-visibility: hidden;
   /* brighten border + glow on hover */
@@ -472,35 +473,18 @@ html.lenis body {
 }
 
 /* ── Grid prize cards — hover lift + glow ─────────────────────────────── */
-.prize-grid-card {
-  position: relative;
-  border-radius: 0.75rem;
-  border: 1px solid color-mix(in srgb, var(--card-color) 40%, transparent);
-  background: rgba(15, 23, 42, 0.80);
-  backdrop-filter: blur(12px);
-  padding: 1.5rem;
-  /* transform is driven by JS mouse-tracking; only box-shadow transitions via CSS */
-  transition: box-shadow 0.3s ease, border-color 0.3s ease;
-}
+/* Replaced by BentoCard component in v4 — styles now inline */
 
-.prize-grid-card:hover {
-  border-color: var(--card-border-hover);
-  box-shadow: 0 0 20px var(--card-glow), 0 8px 32px rgba(0, 0, 0, 0.5);
-}
+/* Thin coloured accent bar — no longer used in v4 */
 
-/* Thin coloured accent bar along the top edge of each grid card */
-.prize-card-accent-line {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 2px;
-  border-radius: 0.75rem 0.75rem 0 0;
-  opacity: 0.7;
-  transition: opacity 0.3s ease;
-}
-.prize-grid-card:hover .prize-card-accent-line {
-  opacity: 1;
+/* row-span-2 helper for the Bento grand cash card */
+@media (min-width: 768px) {
+  .md\:row-span-2 {
+    grid-row: span 2 / span 2;
+  }
+  .md\:col-span-2 {
+    grid-column: span 2 / span 2;
+  }
 }
 
 /* ── Glowing pill tags (Special Categories / Internship) ──────────────── */
@@ -529,4 +513,15 @@ html.lenis body {
   border-color: var(--pill-color);
   box-shadow: 0 0 12px var(--pill-glow-hover), 0 0 4px var(--pill-glow);
   transform: translateY(-2px);
+}
+
+/* ── Prize Pool v6 — split layout grid ──────────────────────────────────── */
+.prize-split-grid {
+  grid-template-columns: 1fr 1fr;
+}
+
+@media (max-width: 1023px) {
+  .prize-split-grid {
+    grid-template-columns: 1fr;
+  }
 }

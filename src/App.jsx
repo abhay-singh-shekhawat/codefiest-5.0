@@ -15,6 +15,7 @@ import MagneticCursor from './components/MagneticCursor.jsx'
 import TimelinePage from './components/TimelinePage.jsx'
 import PrizePoolPage from './components/PrizePoolPage.jsx'
 import GlimpsePage from './components/GlimpsePage.jsx'
+import TeamPage from './components/TeamPage.jsx'
 
 const modalData = {
   aboutModal: {
@@ -75,33 +76,22 @@ export default function App() {
     })
   }, [playArcadeBeep])
 
-  // Smooth scroll (Lenis) — tuned per device tier
+  // Smooth scroll (Lenis)
   useEffect(() => {
     const { isMobile, isTouchDevice } = deviceTier
+
     const lenis = new Lenis({
-      autoRaf:      true,
-      // Disable smoothWheel on touch/mobile — native scroll physics are better
-      smoothWheel:  !isTouchDevice,
-      duration:     isMobile ? 0.6 : 1.0,
-      lerp:         isMobile ? 0.18 : 0.1,
-      wheelMultiplier:     1,
-      touchMultiplier:     1.2,
-      anchors:             true,
-      touchInertiaMultiplier: 30,
+      autoRaf:          true,
+      smoothWheel:      !isTouchDevice,
+      lerp:             isMobile ? 0.08 : 0.05,   // lower = longer, silkier glide
+      smoothTouch:      false,
+      wheelMultiplier:  1.8,                       // more travel per wheel tick
+      touchMultiplier:  1.0,
     })
 
-    // Expose for debugging
     window.__lenis = lenis
 
-    // Use Lenis' built-in RAF instead of separate loops
-    function raf(time) {
-      lenis.raf(time)
-      requestAnimationFrame(raf)
-    }
-    const rafId = requestAnimationFrame(raf)
-
     return () => {
-      cancelAnimationFrame(rafId)
       lenis.destroy()
       delete window.__lenis
     }
@@ -132,7 +122,7 @@ export default function App() {
         sectionOneForeground={
           <div className="relative flex flex-col h-full w-full">
             <SatelliteFloating />
-            <Navbar openModal={openModal} soundEnabled={soundEnabled} toggleChiptune={toggleChiptune} />
+            <Navbar soundEnabled={soundEnabled} toggleChiptune={toggleChiptune} />
             <Hero playArcadeBeep={playArcadeBeep} />
             <QuickStats />
           </div>
@@ -141,6 +131,7 @@ export default function App() {
         sectionThree={<TimelinePage />}
         sectionFour={<GlimpsePage />}
         sectionFive={<PrizePoolPage />}
+        sectionSix={<TeamPage />}
       />
 
 

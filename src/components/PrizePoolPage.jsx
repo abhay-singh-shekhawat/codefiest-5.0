@@ -1,36 +1,31 @@
 /**
- * PrizePoolPage.jsx  (v3 — interactive animations)
+ * PrizePoolPage.jsx  (v9 — simplified)
  *
- * On top of the previous polish (hover lift, pulse-glow hero, counters,
- * pill tags) this version adds:
- *
- *  1. 3-D CURSOR TILT — card rotates up to ±12 ° toward the mouse position
- *     using perspective + rotateX/rotateY via vanilla JS mouse tracking.
- *
- *  2. SHINE SWEEP — a radial gradient highlight follows the cursor inside
- *     the card, giving a holographic "light bouncing off glass" feel.
- *
- *  3. CLICK BURST — rapid scale punch (1 → 1.06 → 1) + an expanding ring
- *     ripple centred on the click point.
- *
- *  4. HOVER SPARK SPRAY — on mouseenter, 6 tiny sparks fly outward from the
- *     card in random directions and fade out.
+ * Removed the internal 4×100vh sticky scroll-track. The page now renders
+ * as a single 100vh viewport with all four cards arranged in a 2×2 grid
+ * so there's no empty black gap after it — TeamPage follows immediately.
  */
 
 import { useRef, useEffect, useState, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import GalaxyBackground from './GalaxyBackground.jsx'
+import DeferredRender from './DeferredRender.jsx'
 
-/* ── Counter hook ─────────────────────────────────────────────────────── */
+const TOTAL_CARDS = 4
+
+/* ─────────────────────────────────────────────────────────────────────── */
+/*  UTILITIES                                                               */
+/* ─────────────────────────────────────────────────────────────────────── */
+
 function useCounter(target, duration = 1800, active = false) {
   const [value, setValue] = useState(0)
   useEffect(() => {
     if (!active) return
     let start = null
-    const step = (ts) => {
+    const step = ts => {
       if (!start) start = ts
       const p = Math.min((ts - start) / duration, 1)
-      const e = 1 - (1 - p) * (1 - p)   // ease-out-quad
-      setValue(Math.floor(e * target))
+      setValue(Math.floor((1 - (1 - p) ** 2) * target))
       if (p < 1) requestAnimationFrame(step)
     }
     requestAnimationFrame(step)
@@ -38,184 +33,100 @@ function useCounter(target, duration = 1800, active = false) {
   return `₹${value.toLocaleString('en-IN')}`
 }
 
-/* ── Data ─────────────────────────────────────────────────────────────── */
-const SPECIAL_TAGS    = ['Best UI/UX', 'Most Innovative', 'Best Use of AI']
-const INTERNSHIP_TAGS = ['Career Growth', 'Tech Companies', 'Real Projects']
+const CHAMFER_LG = 'polygon(14px 0%,calc(100% - 14px) 0%,100% 14px,100% calc(100% - 14px),calc(100% - 14px) 100%,14px 100%,0% calc(100% - 14px),0% 14px)'
+const CHAMFER_SM = 'polygon(7px 0%,calc(100% - 7px) 0%,100% 7px,100% calc(100% - 7px),calc(100% - 7px) 100%,7px 100%,0% calc(100% - 7px),0% 7px)'
 
-const PRIZES = [
-  {
-    title: 'Grand Cash Pool',
-    amount: 150000,
-    color: '#fbbf24',
-    glowColor: 'rgba(234,179,8,0.32)',
-    borderHover: '#fbbf24',
-  },
-  {
-    title: 'Special Categories',
-    tags: SPECIAL_TAGS,
-    color: '#a855f7',
-    glowColor: 'rgba(168,85,247,0.28)',
-    borderHover: '#a855f7',
-  },
-  {
-    title: 'Internship Opportunities',
-    tags: INTERNSHIP_TAGS,
-    color: '#22d3ee',
-    glowColor: 'rgba(34,211,238,0.25)',
-    borderHover: '#22d3ee',
-  },
-  {
-    title: 'Swag & Goodies',
-    label: 'For Everyone',
-    subtitle: 'T-shirts, stickers, and exclusive merchandise',
-    color: '#34d399',
-    glowColor: 'rgba(52,211,153,0.25)',
-    borderHover: '#34d399',
-  },
-]
-
-/* ── Background particles ─────────────────────────────────────────────── */
-function FloatingParticles() {
+/* ── HUD corner L-brackets ── */
+function HudCorners({ color }) {
   return (
-    <div className="absolute inset-0 overflow-hidden pointer-events-none">
-      {[...Array(12)].map((_, i) => (
-        <motion.div
-          key={i}
-          className="absolute w-2 h-2 rounded-full"
-          style={{
-            left: `${(i * 8.3) % 100}%`,
-            top: `${(i * 13.7) % 100}%`,
-            backgroundColor: ['#fbbf24','#a855f7','#22d3ee','#34d399'][i % 4],
-            boxShadow: `0 0 8px ${['#fbbf24','#a855f7','#22d3ee','#34d399'][i % 4]}`,
-          }}
-          animate={{ y:[0,-30,0], opacity:[0.2,0.8,0.2], scale:[1,1.5,1] }}
-          transition={{ duration: 3 + (i % 3), repeat: Infinity, delay: i * 0.18 }}
-        />
+    <>
+      {[{top:6,left:6},{top:6,right:6},{bottom:6,left:6},{bottom:6,right:6}].map((pos,i) => (
+        <div key={i} style={{ position:'absolute',width:12,height:12,pointerEvents:'none',zIndex:8,...pos }}>
+          <div style={{ position:'absolute',top:0,left:0,width:'100%',height:1.5,background:color,boxShadow:`0 0 4px ${color}` }} />
+          <div style={{ position:'absolute',top:0,left:0,width:1.5,height:'100%',background:color,boxShadow:`0 0 4px ${color}` }} />
+        </div>
       ))}
-    </div>
+    </>
   )
 }
 
-/* ── Pill tag ─────────────────────────────────────────────────────────── */
-function PillTag({ text, color }) {
+function DotGrid({ color = 'rgba(148,163,184,0.05)' }) {
+  return <div style={{ position:'absolute',inset:0,pointerEvents:'none',zIndex:1,
+    backgroundImage:`radial-gradient(circle,${color} 1px,transparent 1px)`,backgroundSize:'12px 12px' }} />
+}
+
+function Scanlines() {
+  return <div style={{ position:'absolute',inset:0,pointerEvents:'none',zIndex:9,opacity:0.12,
+    background:'repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,0.5) 2px,rgba(0,0,0,0.5) 4px)' }} />
+}
+
+function StatusDot({ color, label }) {
   return (
-    <span
-      className="prize-pill-tag"
-      style={{
-        '--pill-color': color,
-        '--pill-bg':    `${color}18`,
-        '--pill-border':`${color}44`,
-        '--pill-glow':  `${color}55`,
-        '--pill-glow-hover': `${color}99`,
-      }}
-    >
-      {text}
+    <span style={{ display:'inline-flex',alignItems:'center',gap:5 }}>
+      <motion.span animate={{ opacity:[1,0.2,1] }} transition={{ duration:1.4,repeat:Infinity }}
+        style={{ display:'inline-block',width:5,height:5,borderRadius:'50%',background:color,boxShadow:`0 0 6px ${color}` }} />
+      <span style={{ fontFamily:'"Silkscreen",monospace',fontSize:8,letterSpacing:'0.12em',color:`${color}80`,textTransform:'uppercase' }}>
+        {label}
+      </span>
     </span>
   )
 }
 
-/* ── Hover spark spray ────────────────────────────────────────────────── */
 function SparkBurst({ color, active }) {
-  const sparks = [0,1,2,3,4,5]
-  const angles = sparks.map((i) => (i / sparks.length) * 360)
-
   return (
     <AnimatePresence>
-      {active && sparks.map((i) => {
-        const angle = angles[i]
-        const rad   = (angle * Math.PI) / 180
-        const dist  = 28 + Math.random() * 18
+      {active && [0,1,2,3,4,5].map(i => {
+        const rad = (i/6)*Math.PI*2
+        const dist = 28+Math.random()*16
         return (
-          <motion.span
-            key={i}
-            initial={{ opacity: 1, x: 0, y: 0, scale: 1 }}
-            animate={{
-              opacity: 0,
-              x: Math.cos(rad) * dist,
-              y: Math.sin(rad) * dist,
-              scale: 0.3,
-            }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.5, ease: 'easeOut' }}
-            style={{
-              position: 'absolute',
-              top: '50%',
-              left: '50%',
-              width: 5,
-              height: 5,
-              borderRadius: '50%',
-              backgroundColor: color,
-              boxShadow: `0 0 6px ${color}`,
-              pointerEvents: 'none',
-              zIndex: 20,
-            }}
-          />
+          <motion.span key={i}
+            initial={{ opacity:1,x:0,y:0,scale:1 }}
+            animate={{ opacity:0,x:Math.cos(rad)*dist,y:Math.sin(rad)*dist,scale:0.3 }}
+            exit={{ opacity:0 }}
+            transition={{ duration:0.5,ease:'easeOut' }}
+            style={{ position:'absolute',top:'50%',left:'50%',width:4,height:4,
+              background:color,boxShadow:`0 0 5px ${color}`,pointerEvents:'none',zIndex:20 }} />
         )
       })}
     </AnimatePresence>
   )
 }
 
-/* ── Click ring ripple ────────────────────────────────────────────────── */
 function RippleEffect({ ripples, color }) {
   return (
     <>
-      {ripples.map((r) => (
-        <motion.span
-          key={r.id}
-          initial={{ opacity: 0.7, scale: 0, x: r.x - 40, y: r.y - 40 }}
-          animate={{ opacity: 0, scale: 1 }}
-          transition={{ duration: 0.6, ease: 'easeOut' }}
-          style={{
-            position: 'absolute',
-            width: 80,
-            height: 80,
-            borderRadius: '50%',
-            border: `2px solid ${color}`,
-            boxShadow: `0 0 10px ${color}88`,
-            pointerEvents: 'none',
-            zIndex: 15,
-          }}
-        />
+      {ripples.map(r => (
+        <motion.span key={r.id}
+          initial={{ opacity:0.6,scale:0,x:r.x-40,y:r.y-40 }}
+          animate={{ opacity:0,scale:1 }}
+          transition={{ duration:0.6,ease:'easeOut' }}
+          style={{ position:'absolute',width:80,height:80,
+            border:`1.5px solid ${color}`,boxShadow:`0 0 8px ${color}88`,pointerEvents:'none',zIndex:15 }} />
       ))}
     </>
   )
 }
 
-/* ── Interactive prize card ───────────────────────────────────────────── */
-function PrizeCard({ prize, index, counterActive }) {
-  const cardRef      = useRef(null)
-  const shineRef     = useRef(null)
-  const frameRef     = useRef(null)
+/* ─────────────────────────────────────────────────────────────────────── */
+/*  CARD SHELL                                                              */
+/* ─────────────────────────────────────────────────────────────────────── */
+function CardShell({ children, color, glowColor, moduleId }) {
+  const cardRef = useRef(null)
+  const shineRef = useRef(null)
+  const frameRef = useRef(null)
+  const [sparking, setSparking] = useState(false)
+  const [ripples,  setRipples]  = useState([])
+  const [hovered,  setHovered]  = useState(false)
 
-  const [sparking, setSparking]   = useState(false)
-  const [ripples,  setRipples]    = useState([])
-  const [punching, setPunching]   = useState(false)
-
-  const counterVal = useCounter(prize.amount ?? 0, 1800, counterActive && !!prize.amount)
-
-  /* ── 3-D tilt + shine on mouse move ─────────────────────────────── */
-  const onMouseMove = useCallback((e) => {
-    const card = cardRef.current
-    if (!card) return
-
+  const onMouseMove = useCallback(e => {
+    const c = cardRef.current; if (!c) return
     cancelAnimationFrame(frameRef.current)
     frameRef.current = requestAnimationFrame(() => {
-      const { left, top, width, height } = card.getBoundingClientRect()
-      const x = (e.clientX - left) / width   // 0-1
-      const y = (e.clientY - top)  / height  // 0-1
-
-      const rotX =  (y - 0.5) * -22   // tilt up/down ±11°
-      const rotY =  (x - 0.5) *  22   // tilt left/right ±11°
-
-      card.style.transform =
-        `perspective(700px) rotateX(${rotX.toFixed(2)}deg) rotateY(${rotY.toFixed(2)}deg) translateY(-6px) scale(1.02)`
-
-      /* Shine: radial gradient follows cursor */
+      const { left,top,width,height } = c.getBoundingClientRect()
+      const x = (e.clientX-left)/width, y = (e.clientY-top)/height
+      c.style.transform = `perspective(900px) rotateX(${((y-.5)*-12).toFixed(2)}deg) rotateY(${((x-.5)*12).toFixed(2)}deg) translateY(-4px)`
       if (shineRef.current) {
-        shineRef.current.style.background =
-          `radial-gradient(circle at ${(x * 100).toFixed(1)}% ${(y * 100).toFixed(1)}%,` +
-          `rgba(255,255,255,0.13) 0%, transparent 65%)`
+        shineRef.current.style.background = `radial-gradient(circle at ${(x*100).toFixed(1)}% ${(y*100).toFixed(1)}%,rgba(255,255,255,0.07) 0%,transparent 55%)`
         shineRef.current.style.opacity = '1'
       }
     })
@@ -223,241 +134,331 @@ function PrizeCard({ prize, index, counterActive }) {
 
   const onMouseLeave = useCallback(() => {
     cancelAnimationFrame(frameRef.current)
-    const card = cardRef.current
-    if (card) {
-      card.style.transition = 'transform 0.5s ease, box-shadow 0.3s ease'
-      card.style.transform  = ''
-      setTimeout(() => { if (card) card.style.transition = '' }, 500)
-    }
+    const c = cardRef.current; if (!c) return
+    c.style.transition = 'transform 0.5s cubic-bezier(0.23,1,0.32,1)'
+    c.style.transform = ''
+    setTimeout(() => { if (c) c.style.transition = '' }, 510)
     if (shineRef.current) shineRef.current.style.opacity = '0'
+    setHovered(false)
   }, [])
 
-  /* ── Spark burst on hover enter ─────────────────────────────────── */
   const onMouseEnter = useCallback(() => {
-    setSparking(true)
+    setSparking(true); setHovered(true)
     setTimeout(() => setSparking(false), 550)
   }, [])
 
-  /* ── Click burst (scale punch + ring ripple) ─────────────────────── */
-  const onClick = useCallback((e) => {
-    const card = cardRef.current
-    if (!card) return
-
-    /* Scale punch */
-    setPunching(true)
-    setTimeout(() => setPunching(false), 220)
-
-    /* Ring ripple at click position relative to card */
-    const { left, top } = card.getBoundingClientRect()
-    const rx = e.clientX - left
-    const ry = e.clientY - top
-    const id = Date.now() + Math.random()
-    setRipples((prev) => [...prev, { id, x: rx, y: ry }])
-    setTimeout(() => setRipples((prev) => prev.filter((r) => r.id !== id)), 650)
+  const onClick = useCallback(e => {
+    const c = cardRef.current; if (!c) return
+    const { left,top } = c.getBoundingClientRect()
+    const id = Date.now()+Math.random()
+    setRipples(p => [...p,{id,x:e.clientX-left,y:e.clientY-top}])
+    setTimeout(() => setRipples(p => p.filter(r => r.id!==id)), 650)
   }, [])
 
-  /* Cleanup rAF on unmount */
   useEffect(() => () => cancelAnimationFrame(frameRef.current), [])
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 40 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, margin: '-80px' }}
-      transition={{ duration: 0.6, delay: index * 0.1 }}
-      animate={punching ? { scale: 1.06 } : { scale: 1 }}
-    >
-      <div
-        ref={cardRef}
-        className="prize-grid-card group"
-        style={{
-          '--card-color':        prize.color,
-          '--card-glow':         prize.glowColor,
-          '--card-border-hover': prize.borderHover,
-          position: 'relative',
-          overflow: 'hidden',
-          cursor: 'pointer',
-          willChange: 'transform',
-        }}
-        onMouseMove={onMouseMove}
-        onMouseLeave={onMouseLeave}
-        onMouseEnter={onMouseEnter}
-        onClick={onClick}
-      >
-        {/* Shine overlay */}
-        <span
-          ref={shineRef}
-          style={{
-            position: 'absolute',
-            inset: 0,
-            opacity: 0,
-            borderRadius: 'inherit',
-            pointerEvents: 'none',
-            transition: 'opacity 0.2s ease',
-            zIndex: 10,
-          }}
-        />
-
-        {/* Ripple rings */}
-        <RippleEffect ripples={ripples} color={prize.color} />
-
-        {/* Spark burst */}
-        <SparkBurst color={prize.color} active={sparking} />
-
-        {/* ── Card content ── */}
-        <div style={{ position: 'relative', zIndex: 5 }}>
-
-          {/* Top accent line */}
-          <div
-            className="prize-card-accent-line"
-            style={{ background: `linear-gradient(90deg, ${prize.color}, transparent)` }}
-          />
-
-          {/* Title */}
-          <h3
-            className="font-pixel text-base font-bold mb-3 uppercase tracking-wider"
-            style={{ color: prize.color }}
-          >
-            {prize.title}
-          </h3>
-
-          {/* Counted amount */}
-          {prize.amount != null && (
-            <div
-              className="font-pixel text-2xl font-black mb-3"
-              style={{
-                color: prize.color,
-                textShadow: `0 0 12px ${prize.color}88, 0 0 24px ${prize.color}44`,
-              }}
-            >
-              {counterActive ? counterVal : '₹0'}
-            </div>
-          )}
-
-          {/* Label badge (Swag card) */}
-          {prize.label && (
-            <div
-              className="inline-block px-3 py-1 rounded-full font-pixel text-xs mb-3 uppercase tracking-widest"
-              style={{
-                backgroundColor: `${prize.color}22`,
-                color: prize.color,
-                border: `1px solid ${prize.color}44`,
-              }}
-            >
-              {prize.label}
-            </div>
-          )}
-
-          {/* Pill tags */}
-          {prize.tags && (
-            <div className="flex flex-wrap gap-2 mb-3">
-              {prize.tags.map((tag) => (
-                <PillTag key={tag} text={tag} color={prize.color} />
-              ))}
-            </div>
-          )}
-
-          {/* Subtitle */}
-          {prize.subtitle && (
-            <p className="text-sm text-slate-400 leading-relaxed">{prize.subtitle}</p>
-          )}
-        </div>
-      </div>
-    </motion.div>
+    <div ref={cardRef}
+      onMouseMove={onMouseMove} onMouseLeave={onMouseLeave}
+      onMouseEnter={onMouseEnter} onClick={onClick}
+      style={{ position:'relative',overflow:'hidden',height:'100%',
+        clipPath:CHAMFER_LG,
+        background:'rgba(2,8,23,0.42)',
+        backdropFilter:'blur(12px)',
+        border:`1px solid ${hovered ? color+'55' : color+'22'}`,
+        boxShadow:hovered
+          ? `0 0 0 1px ${color}28,0 0 28px ${glowColor},0 12px 40px rgba(0,0,0,0.65)`
+          : `0 0 0 1px ${color}10,0 8px 32px rgba(0,0,0,0.55)`,
+        transition:'box-shadow 0.3s ease,border-color 0.3s ease',cursor:'default' }}>
+      <DotGrid color={`${color}08`} />
+      <Scanlines />
+      <HudCorners color={hovered ? color : `${color}50`} />
+      <span ref={shineRef} style={{ position:'absolute',inset:0,opacity:0,pointerEvents:'none',transition:'opacity 0.2s ease',zIndex:10 }} />
+      <RippleEffect ripples={ripples} color={color} />
+      <SparkBurst color={color} active={sparking} />
+      {moduleId && (
+        <div style={{ position:'absolute',top:9,right:14,zIndex:12,
+          fontFamily:'"Silkscreen",monospace',fontSize:8,color:`${color}60`,
+          letterSpacing:'0.14em',textTransform:'uppercase' }}>// {moduleId}</div>
+      )}
+      <div style={{ position:'relative',zIndex:5,height:'100%' }}>{children}</div>
+    </div>
   )
 }
 
-/* ── Page ─────────────────────────────────────────────────────────────── */
+/* ─────────────────────────────────────────────────────────────────────── */
+/*  CARD CONTENTS                                                           */
+/* ─────────────────────────────────────────────────────────────────────── */
+
+function CardGrandCash({ counterActive }) {
+  const counter = useCounter(150000, 1800, counterActive)
+  return (
+    <CardShell color="#fbbf24" glowColor="rgba(234,179,8,0.28)" moduleId="PRIZE_RESERVE_ALPHA">
+      <div style={{ padding:'28px 24px' }}>
+        <div style={{ display:'flex',flexDirection:'column',gap:2,marginBottom:14 }}>
+          {['SYS.LOCATION: SECTOR_01','REWARD_TIER: ALPHA'].map(m => (
+            <span key={m} style={{ fontFamily:'"Silkscreen",monospace',fontSize:8,
+              color:'rgba(251,191,36,0.40)',letterSpacing:'0.13em',textTransform:'uppercase' }}>{m}</span>
+          ))}
+        </div>
+        <h3 className="font-pixel text-white uppercase tracking-wide" style={{ fontSize:'1rem',marginBottom:5 }}>Grand Cash Pool</h3>
+        <p style={{ fontSize:11,color:'rgba(148,163,184,0.80)',lineHeight:1.6,marginBottom:20 }}>
+          Top teams compete for the primary cash pool — the largest payout in Codefiesta history.
+        </p>
+        <div style={{ position:'relative',overflow:'hidden',clipPath:CHAMFER_SM,
+          background:'linear-gradient(135deg,rgba(234,179,8,0.10),rgba(0,0,0,0.40))',
+          border:'1px solid rgba(251,191,36,0.28)',padding:'20px 18px',marginBottom:18 }}>
+          {['top-0','bottom-0'].map(p => (
+            <div key={p} className={`absolute ${p} left-0 right-0`}
+              style={{ height:1,background:'linear-gradient(90deg,transparent,rgba(251,191,36,0.55),transparent)' }} />
+          ))}
+          <motion.div animate={{ opacity:[0.5,1,0.5] }} transition={{ duration:1.8,repeat:Infinity }}
+            style={{ position:'absolute',left:0,top:'50%',transform:'translateY(-50%)',width:2,height:'55%',
+              background:'rgba(251,191,36,0.75)',boxShadow:'0 0 8px rgba(251,191,36,0.8)' }} />
+          <motion.div animate={{ opacity:[0.5,1,0.5] }} transition={{ duration:1.8,repeat:Infinity,delay:0.9 }}
+            style={{ position:'absolute',right:0,top:'50%',transform:'translateY(-50%)',width:2,height:'55%',
+              background:'rgba(251,191,36,0.75)',boxShadow:'0 0 8px rgba(251,191,36,0.8)' }} />
+          <div className="font-pixel font-black text-yellow-400 text-center"
+            style={{ fontSize:'clamp(1.8rem,4vw,2.8rem)',lineHeight:1,
+              textShadow:'0 0 18px rgba(234,179,8,0.9),0 0 40px rgba(234,179,8,0.4)' }}>
+            {counterActive ? counter : '₹0'}
+          </div>
+          <div style={{ fontFamily:'"Silkscreen",monospace',fontSize:9,textAlign:'center',
+            color:'rgba(251,191,36,0.45)',letterSpacing:'0.18em',marginTop:6 }}>WINNER'S PURSE</div>
+        </div>
+      </div>
+    </CardShell>
+  )
+}
+
+function CardSpecialCategories() {
+  const tags = [
+    { key:'BEST_UI/UX',         color:'#a855f7', prize:'₹15,000' },
+    { key:'MOST_INNOVATIVE',    color:'#818cf8', prize:'₹15,000' },
+    { key:'BEST_USE_OF_AI',     color:'#c084fc', prize:'₹15,000' },
+  ]
+  const [active, setActive] = useState(null)
+  return (
+    <CardShell color="#a855f7" glowColor="rgba(168,85,247,0.25)" moduleId="TRACK_MATRIX">
+      <div style={{ padding:'28px 24px' }}>
+        <div style={{ display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:18 }}>
+          <div>
+            <h3 className="font-pixel text-white uppercase tracking-wide" style={{ fontSize:'1rem',marginBottom:3 }}>Special Categories</h3>
+            <p style={{ fontSize:11,color:'rgba(148,163,184,0.78)' }}>Category-specific awards across disciplines</p>
+          </div>
+          <div style={{ fontFamily:'"Silkscreen",monospace',fontSize:8,color:'rgba(168,85,247,0.55)',
+            padding:'3px 9px',border:'1px solid rgba(168,85,247,0.22)',background:'rgba(168,85,247,0.07)',
+            clipPath:'polygon(6px 0%,100% 0%,100% 100%,0% 100%,0% 6px)',letterSpacing:'0.12em' }}>
+            ORBITAL_AWARDS
+          </div>
+        </div>
+        <div style={{ display:'flex',flexDirection:'column',gap:10,marginBottom:20 }}>
+          {tags.map((tag,i) => {
+            const isActive = active===tag.key
+            return (
+              <motion.button key={tag.key}
+                initial={{ opacity:0,y:10 }} animate={{ opacity:1,y:0 }} transition={{ delay:i*0.08 }}
+                onClick={() => setActive(isActive ? null : tag.key)}
+                style={{ fontFamily:'"Silkscreen",monospace',fontSize:10,letterSpacing:'0.12em',textTransform:'uppercase',
+                  color:isActive ? '#fff' : tag.color,
+                  background:isActive ? `${tag.color}20` : 'rgba(0,0,0,0.30)',
+                  border:`1px solid ${isActive ? tag.color : tag.color+'3a'}`,
+                  clipPath:'polygon(7px 0%,100% 0%,100% calc(100% - 7px),calc(100% - 7px) 100%,0% 100%,0% 7px)',
+                  padding:'9px 14px',boxShadow:isActive ? `0 0 12px ${tag.color}55` : 'none',
+                  textShadow:isActive ? `0 0 8px ${tag.color}` : 'none',
+                  transition:'all 0.2s ease',display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,cursor:'default' }}>
+                <span style={{ display:'inline-flex',alignItems:'center',gap:5 }}>
+                  <span style={{ color:`${tag.color}70` }}>[</span>{tag.key}<span style={{ color:`${tag.color}70` }}>]</span>
+                </span>
+                <span style={{ fontFamily:'"Silkscreen",monospace',fontSize:11,fontWeight:700,
+                  color:isActive ? '#fff' : '#fde68a',
+                  textShadow:isActive ? `0 0 8px ${tag.color}` : '0 0 6px rgba(253,224,71,0.45)',
+                  letterSpacing:'0.06em' }}>
+                  {tag.prize}
+                </span>
+              </motion.button>
+            )
+          })}
+        </div>
+      </div>
+    </CardShell>
+  )
+}
+
+function CardInternship() {
+  const logs = [
+    { cmd:'CAREER_GROWTH',color:'#22d3ee' },
+    { cmd:'PARTNER_COMPANIES',color:'#67e8f9' },
+    { cmd:'REAL_PROJECTS',color:'#22d3ee' },
+  ]
+  return (
+    <CardShell color="#22d3ee" glowColor="rgba(34,211,238,0.22)" moduleId="CAREER_DOCK">
+      <div style={{ padding:'28px 24px' }}>
+        <h3 className="font-pixel text-white uppercase tracking-wide" style={{ fontSize:'1rem',marginBottom:4 }}>Internship Ops</h3>
+        <p style={{ fontSize:11,color:'rgba(148,163,184,0.78)',marginBottom:20,lineHeight:1.55 }}>
+          Career transmissions awaiting your signal. Top performers get fast-tracked to industry partners.
+        </p>
+        <div style={{ display:'flex',flexDirection:'column',gap:8,marginBottom:20 }}>
+          {logs.map((log,i) => (
+            <motion.div key={log.cmd}
+              animate={{ x:[0,i%2===0?2:-2,0] }} transition={{ duration:3+i,repeat:Infinity,ease:'easeInOut' }}
+              style={{ background:'rgba(34,211,238,0.05)',border:'1px solid rgba(34,211,238,0.18)',
+                clipPath:'polygon(6px 0%,100% 0%,100% 100%,0% 100%,0% 6px)',
+                padding:'7px 12px',display:'flex',alignItems:'center',gap:8 }}>
+              <span style={{ fontFamily:'"Silkscreen",monospace',fontSize:10,color:'rgba(34,211,238,0.45)' }}>{'>'}</span>
+              {i===0 && <motion.span animate={{ opacity:[1,0,1] }} transition={{ duration:1,repeat:Infinity }}
+                style={{ width:5,height:10,background:'rgba(34,211,238,0.65)',display:'inline-block' }} />}
+              <span style={{ fontFamily:'"Silkscreen",monospace',fontSize:10,color:log.color,
+                letterSpacing:'0.12em',textTransform:'uppercase',textShadow:`0 0 6px ${log.color}55` }}>{log.cmd}</span>
+            </motion.div>
+          ))}
+        </div>
+      </div>
+    </CardShell>
+  )
+}
+
+function CardSwag() {
+  const cargo = [
+    { slot:'SLOT_A',item:'T-SHIRT',color:'#34d399' },
+    { slot:'SLOT_B',item:'STICKERS',color:'#6ee7b7' },
+    { slot:'SLOT_C',item:'EXCL. MERCH',color:'#34d399' },
+  ]
+  return (
+    <CardShell color="#34d399" glowColor="rgba(52,211,153,0.22)" moduleId="CARGO_BAY">
+      <div style={{ padding:'28px 24px' }}>
+        <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:5 }}>
+          <h3 className="font-pixel text-white uppercase tracking-wide" style={{ fontSize:'1rem' }}>Swag & Goodies</h3>
+          <div style={{ fontFamily:'"Silkscreen",monospace',fontSize:8,color:'rgba(52,211,153,0.55)',
+            padding:'2px 8px',border:'1px solid rgba(52,211,153,0.20)',background:'rgba(52,211,153,0.07)',
+            clipPath:'polygon(5px 0%,100% 0%,100% 100%,0% 100%,0% 5px)',letterSpacing:'0.12em' }}>
+            SUPPLY: EVERYONE
+          </div>
+        </div>
+        <p style={{ fontSize:11,color:'rgba(148,163,184,0.78)',marginBottom:20 }}>
+          Exclusive payload for all operatives.
+        </p>
+        <div style={{ display:'flex',flexDirection:'column',gap:8,marginBottom:20 }}>
+          {cargo.map((item,i) => (
+            <motion.div key={item.slot}
+              animate={{ y:[0,-2,0] }} transition={{ duration:2.5+i*0.4,repeat:Infinity,ease:'easeInOut',delay:i*0.3 }}
+              style={{ background:'rgba(52,211,153,0.06)',
+                border:`1px solid rgba(52,211,153,${0.20-i*0.04})`,
+                clipPath:'polygon(5px 0%,100% 0%,100% calc(100% - 5px),calc(100% - 5px) 100%,0% 100%,0% 5px)',
+                padding:'6px 12px',display:'flex',alignItems:'center',justifyContent:'space-between' }}>
+              <div style={{ display:'flex',alignItems:'center',gap:8 }}>
+                <span style={{ fontFamily:'"Silkscreen",monospace',fontSize:8,color:'rgba(52,211,153,0.38)',letterSpacing:'0.1em' }}>{item.slot}</span>
+                <div style={{ width:1,height:10,background:'rgba(52,211,153,0.20)' }} />
+                <span style={{ fontFamily:'"Silkscreen",monospace',fontSize:10,color:item.color,
+                  letterSpacing:'0.12em',textShadow:`0 0 6px ${item.color}55` }}>{item.item}</span>
+              </div>
+              <span style={{ fontFamily:'"Silkscreen",monospace',fontSize:8,color:'rgba(52,211,153,0.35)',letterSpacing:'0.1em' }}>QTY:∞</span>
+            </motion.div>
+          ))}
+        </div>
+      </div>
+    </CardShell>
+  )
+}
+
+/* ─────────────────────────────────────────────────────────────────────── */
+/*  (Scroll-driven scattered layout removed — cards now sit in a 2×2 grid)  */
+/* ─────────────────────────────────────────────────────────────────────── */
+
+/* ─────────────────────────────────────────────────────────────────────── */
+/*  PAGE                                                                    */
+/* ─────────────────────────────────────────────────────────────────────── */
 export default function PrizePoolPage() {
-  const sectionRef       = useRef(null)
+  const outerRef   = useRef(null)
   const [inView, setInView] = useState(false)
-
-  useEffect(() => {
-    const el = sectionRef.current
-    if (!el) return
-    const obs = new IntersectionObserver(
-      ([entry]) => { if (entry.isIntersecting) setInView(true) },
-      { threshold: 0.25 },
-    )
-    obs.observe(el)
-    return () => obs.disconnect()
-  }, [])
-
   const heroCounter = useCounter(700000, 2000, inView)
 
+  useEffect(() => {
+    const el = outerRef.current
+    if (!el) return
+    const update = () => {
+      const rect = el.getBoundingClientRect()
+      if (rect.top < window.innerHeight * 0.8 && rect.bottom > 0 && !inView) {
+        setInView(true)
+      }
+    }
+    window.addEventListener('scroll', update, { passive: true })
+    update()
+    return () => window.removeEventListener('scroll', update)
+  }, [inView])
+
+  const CARDS = [
+    <CardGrandCash    key="cash"   counterActive={inView} />,
+    <CardSpecialCategories key="cats" />,
+    <CardInternship   key="intern" />,
+    <CardSwag         key="swag"  />,
+  ]
+
   return (
-    <div ref={sectionRef} className="relative min-h-screen w-full py-20 px-6 overflow-hidden">
+    <div ref={outerRef} className="relative w-full min-h-screen overflow-hidden">
+      {/* Galaxy WebGL layer mounts only when this section nears the viewport —
+          saves the 8k-particle build + WebGL context at page load. */}
+      <DeferredRender className="absolute inset-0 pointer-events-none">
+        <GalaxyBackground />
+      </DeferredRender>
 
-      <FloatingParticles />
+      <div className="relative z-10 w-full min-h-screen flex flex-col px-6 md:px-10 py-8">
 
-      <div className="relative z-10 max-w-7xl mx-auto">
-
-        {/* Header */}
-        <motion.div
-          initial={{ opacity: 0, y: -30 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8 }}
-          className="text-center mb-16"
-        >
-          <motion.div className="inline-block mb-3 px-4 py-2 rounded-full border border-yellow-400/30 bg-yellow-500/10 backdrop-blur-md">
-            <span className="font-pixel text-xs text-yellow-300 tracking-widest uppercase">
-              Rewards & Recognition
-            </span>
-          </motion.div>
-
-          <h1
-            className="voxel-3d-text voxel-white-block font-pixel font-black uppercase text-center mb-4"
-            style={{ fontSize: 'clamp(2.5rem, 7vw, 5rem)' }}
-          >
+        {/* ── Centred header ── */}
+        <div className="flex flex-col items-center pt-2">
+          <h1 className="voxel-3d-text voxel-white-block font-pixel font-black uppercase text-center"
+            style={{ fontSize:'clamp(2rem,5vw,4rem)', lineHeight:1,
+              textShadow:'0 0 40px rgba(251,191,36,0.35)' }}>
             Prize Pool
           </h1>
 
-          <p className="text-slate-300 text-lg max-w-2xl mx-auto leading-relaxed mb-8">
-            Turn your ideas into reality and win amazing prizes including cash prize
-          </p>
-
-          {/* Hero card */}
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.8, delay: 0.2 }}
-            className="relative inline-block"
-          >
-            <div className="prize-hero-card">
-              <div className="flex flex-col items-center gap-3">
-                <span className="font-pixel text-sm text-yellow-300/70 tracking-widest uppercase">
-                  Total Prize Worth
-                </span>
-                <div
-                  className="font-pixel font-black text-yellow-400 prize-hero-amount"
-                  style={{ fontSize: 'clamp(3rem, 10vw, 6rem)', lineHeight: 1 }}
-                >
-                  {inView ? heroCounter : '₹0'}
-                </div>
+          {/* ── Total prize readout ── */}
+          <div style={{ marginTop:18 }}>
+            <div style={{
+              position:'relative',
+              clipPath:'polygon(14px 0%,calc(100% - 14px) 0%,100% 14px,100% calc(100% - 14px),calc(100% - 14px) 100%,14px 100%,0% calc(100% - 14px),0% 14px)',
+              background:'rgba(0,0,0,0.50)',
+              backdropFilter:'blur(16px)',
+              border:'1px solid rgba(234,179,8,0.40)',
+              padding:'14px 32px',
+              boxShadow:'0 0 60px rgba(234,179,8,0.20), 0 0 120px rgba(234,179,8,0.08)',
+              textAlign:'center',
+            }}>
+              {[{top:0,left:0},{top:0,right:0},{bottom:0,left:0},{bottom:0,right:0}].map((pos,i) => (
+                <motion.div key={i} animate={{ opacity:[0.4,1,0.4] }}
+                  transition={{ duration:1.8,repeat:Infinity,delay:i*0.45 }}
+                  style={{ position:'absolute',width:6,height:6,
+                    background:'rgba(251,191,36,0.80)',boxShadow:'0 0 6px rgba(251,191,36,0.9)',...pos }} />
+              ))}
+              <div style={{ fontFamily:'"Silkscreen",monospace',fontSize:8,
+                color:'rgba(251,191,36,0.40)',letterSpacing:'0.18em',marginBottom:4 }}>
+                TOTAL_PRIZE_WORTH
+              </div>
+              <div className="font-pixel font-black text-yellow-400 prize-hero-amount"
+                style={{ fontSize:'clamp(1.6rem,4.5vw,2.8rem)',lineHeight:1 }}>
+                {inView ? heroCounter : '₹0'}
               </div>
             </div>
-          </motion.div>
-        </motion.div>
+          </div>
+        </div>
 
-        {/* Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 max-w-6xl mx-auto">
-          {PRIZES.map((prize, i) => (
-            <PrizeCard key={i} prize={prize} index={i} counterActive={inView} />
+        {/* ── 2×2 card grid filling remaining space ── */}
+        <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 mt-8 max-w-6xl mx-auto w-full items-stretch">
+          {CARDS.map((card, idx) => (
+            <div key={idx} className="min-h-[220px]">{card}</div>
           ))}
         </div>
 
-        {/* Bottom CTA */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          whileInView={{ opacity: 1 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.8, delay: 0.5 }}
-          className="text-center mt-16"
-        >
-          <p className="font-pixel text-xs text-cyan-300/60 tracking-widest uppercase">
-            ◈ Build • Innovate • Win ◈
-          </p>
-        </motion.div>
+        {/* ── HUD corner metadata ── */}
+        <div className="flex justify-between pt-4 mt-2"
+          style={{ borderTop:'1px solid rgba(56,189,248,0.06)' }}>
+          {[['FPS','60.0'],['PROTOCOL','5.0'],['ARENA_LOADED','100%']].map(([k,v]) => (
+            <span key={k} style={{ fontFamily:'"Silkscreen",monospace',fontSize:8,
+              letterSpacing:'0.12em',color:'rgba(56,189,248,0.20)',textTransform:'uppercase' }}>
+              {k}: <span style={{ color:'rgba(56,189,248,0.38)' }}>{v}</span>
+            </span>
+          ))}
+        </div>
 
       </div>
     </div>

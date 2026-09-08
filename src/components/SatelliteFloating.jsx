@@ -5,7 +5,6 @@ import satelliteImg from '../assets/satellite.png'
 export default function SatelliteFloating() {
   const containerRef = useRef(null)
   const glowRef = useRef(null)
-  const dotRef = useRef(null)
 
   useEffect(() => {
     const container = containerRef.current
@@ -29,24 +28,9 @@ export default function SatelliteFloating() {
       loop: true,
     })
 
-    const dotAnim = anime({
-      targets: dotRef.current,
-      scale: [1, 1.6, 1],
-      opacity: [0.7, 1, 0.7],
-      boxShadow: [
-        '0 0 6px 2px rgba(245,195,68,0.6)',
-        '0 0 14px 6px rgba(245,195,68,1)',
-        '0 0 6px 2px rgba(245,195,68,0.6)',
-      ],
-      duration: 1400,
-      easing: 'easeInOutSine',
-      loop: true,
-    })
-
     return () => {
       floatAnim.pause()
       glowAnim.pause()
-      dotAnim.pause()
     }
   }, [])
 
@@ -66,15 +50,7 @@ export default function SatelliteFloating() {
             transform: 'scale(1.1)',
           }}
         />
-        {/* Glowing dot on top of the satellite */}
-        <div
-          ref={dotRef}
-          className="absolute -top-1 left-1/2 -translate-x-1/2 w-3 h-3 rounded-full z-10"
-          style={{
-            background: '#f5c344',
-            boxShadow: '0 0 8px 3px rgba(245,195,68,0.7)',
-          }}
-        />
+
         {/* Satellite image */}
         <img
           src={satelliteImg}
